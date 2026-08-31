@@ -5,6 +5,24 @@ semantic versioning from 1.0 onwards.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-08-31
+
+### Fixed
+- **Opening the chat no longer says "Connecting…".** `connect()` called
+  `reconnectNow()` unconditionally, so arriving at the chat screen tore down a
+  perfectly healthy socket and re-handshook it. It now leaves a live
+  connection alone.
+
+### Added
+- `trackScreen()` and `updateCart()` — give agents the browsing context and
+  basket they already see for website customers. Without them the agent panel
+  shows only "Android app".
+- **Voice messages**, opt-in via `voiceMessagesEnabled` (needs `RECORD_AUDIO`
+  in your manifest). AAC-in-MP4, which the dashboard plays and WhatsApp
+  accepts.
+- The attach button now offers **Photo** or **File** explicitly, rather than
+  one picker that buried the camera roll.
+
 ## [0.3.0] — 2026-08-31
 
 ### Fixed

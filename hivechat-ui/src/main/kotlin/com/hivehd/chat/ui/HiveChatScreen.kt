@@ -3,6 +3,7 @@ package com.hivehd.chat.ui
 import android.content.Intent
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -26,18 +27,27 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectTapGestures
+
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,6 +61,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -66,6 +77,7 @@ import androidx.compose.ui.unit.dp
 import android.net.Uri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.hivehd.chat.ConnectionState
@@ -114,6 +126,17 @@ fun HiveChatScreen(
      * the composer sit a keyboard's height too high.
      */
     applyWindowInsets: Boolean = true,
+    /**
+     * Whether the customer can send a voice note.
+     *
+     * Off by default, and deliberately: recording needs `RECORD_AUDIO`, and an
+     * SDK that made every host app ask for the microphone would be taking a
+     * decision that is not its to take. Turn it on and declare
+     * `<uses-permission android:name="android.permission.RECORD_AUDIO" />` in
+     * your manifest — the SDK asks for it at the moment the customer taps the
+     * mic, not at launch.
+     */
+    voiceMessagesEnabled: Boolean = false,
 ) {
     val settings by chat.widgetSettings.collectAsStateWithLifecycle()
     val messages by chat.messages.collectAsStateWithLifecycle()
@@ -149,23 +172,80 @@ fun HiveChatScreen(
     /* Photos and documents go through the system picker, so the SDK needs no
        storage permission of its own — the host app declares none either. We
        read the bytes the picker granted us and hand them to the uploader. */
-    val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            try {
-                val resolver = context.contentResolver
-                val bytes = withContext(Dispatchers.IO) {
-                    resolver.openInputStream(uri)?.use { it.readBytes() }
-                } ?: throw IllegalStateException("That file could not be read.")
-                chat.send(
-                    fileBytes = bytes,
-                    filename = uri.displayName(context) ?: "upload",
-                    contentType = resolver.getType(uri) ?: "application/octet-stream",
-                )
-            } catch (e: Throwable) {
-                errorMessage = e.message ?: "That file could not be sent."
+    val upload: (android.net.Uri?) -> Unit = { uri ->
+        if (uri != null) {
+            scope.launch {
+                try {
+                    val resolver = context.contentResolver
+                    val bytes = withContext(Dispatchers.IO) {
+                        resolver.openInputStream(uri)?.use { it.readBytes() }
+                    } ?: throw IllegalStateException("That file could not be read.")
+                    chat.send(
+                        fileBytes = bytes,
+                        filename = uri.displayName(context) ?: "upload",
+                        contentType = resolver.getType(uri) ?: "application/octet-stream",
+                    )
+                } catch (e: Throwable) {
+                    errorMessage = e.message ?: "That file could not be sent."
+                }
             }
         }
+    }
+
+    /* Two pickers, because they are not the same experience. The photo picker
+       shows the customer's camera roll and grants access to one image without
+       any permission prompt; the document picker is where a PDF receipt or a
+       returns label actually lives. Offering only one meant someone hunting
+       for the other. */
+    val pickPhoto = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { upload(it) }
+
+    val pickDocument = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { upload(it) }
+
+    val recorder = remember { VoiceRecorder(context) }
+    var isRecording by remember { mutableStateOf(false) }
+    var recordingSeconds by remember { mutableIntStateOf(0) }
+
+    /* A running clock while recording — the customer needs to see that
+       something is happening, and how long they have been talking. */
+    LaunchedEffect(isRecording) {
+        recordingSeconds = 0
+        while (isRecording) {
+            delay(1_000)
+            recordingSeconds++
+        }
+    }
+
+    val sendRecording: () -> Unit = {
+        isRecording = false
+        val file = recorder.stopAndTake()
+        if (file == null) {
+            errorMessage = "That recording was too short."
+        } else {
+            scope.launch {
+                try {
+                    val bytes = withContext(Dispatchers.IO) { file.readBytes() }
+                    chat.send(fileBytes = bytes, filename = "voice-message.m4a", contentType = "audio/mp4")
+                } catch (e: Throwable) {
+                    errorMessage = e.message ?: "That recording could not be sent."
+                } finally {
+                    withContext(Dispatchers.IO) { file.delete() }
+                }
+            }
+        }
+    }
+
+    val startRecording: () -> Unit = {
+        if (recorder.start()) isRecording = true
+        else errorMessage = "The microphone is not available right now."
+    }
+
+    val requestMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) startRecording()
+        else errorMessage = "Microphone access is needed to record a voice message."
     }
 
     val openUrl: (String) -> Unit = { url ->
@@ -178,6 +258,7 @@ fun HiveChatScreen(
 
     Surface(modifier = modifier.fillMaxSize()) {
         val focusManager = LocalFocusManager.current
+        val keyboardController = LocalSoftwareKeyboardController.current
         Column(Modifier.fillMaxSize()) {
             ChatHeader(
                 storeName = settings?.storeName.orEmpty(),
@@ -194,19 +275,31 @@ fun HiveChatScreen(
                     .weight(1f)
                     .fillMaxWidth()
                     /*
-                     * Tapping the transcript puts the keyboard away.
+                     * Touching the transcript puts the keyboard away.
                      *
-                     * Every messaging app does this, so its absence reads as
-                     * the screen being stuck: there was no way back to the
-                     * conversation except the system back gesture, which on
-                     * this screen looks like it should leave the chat.
+                     * Every messaging app does this, and without it the screen
+                     * reads as stuck: the keyboard covers half the conversation
+                     * and the only way out is the back gesture, which on this
+                     * screen looks like it should leave the chat entirely.
                      *
-                     * onTap fires only for taps no child claimed, so tapping a
-                     * reaction, a link or a product card still does its own
-                     * thing rather than merely closing the keyboard.
+                     * Watched on the Initial pass rather than through
+                     * detectTapGestures, because by the Main pass a bubble, a
+                     * link or the list's own scroll has already claimed the
+                     * event — a tap on empty space dismissed, a tap on a
+                     * message did nothing, which is worse than neither.
+                     * Nothing is consumed here: this only observes, so every
+                     * one of those still does its own job.
                      */
                     .pointerInput(Unit) {
-                        detectTapGestures(onTap = { focusManager.clearFocus() })
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                if (event.type == PointerEventType.Press) {
+                                    focusManager.clearFocus()
+                                    keyboardController?.hide()
+                                }
+                            }
+                        }
                     },
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(14.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -286,7 +379,19 @@ fun HiveChatScreen(
                 placeholder = settings?.placeholderText ?: "Type your message…",
                 theme = resolvedTheme,
                 applyWindowInsets = applyWindowInsets,
-                onAttach = { pickFile.launch(arrayOf("image/*", "application/pdf")) },
+                onPickPhoto = {
+                    pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                },
+                onPickFile = { pickDocument.launch(arrayOf("*/*")) },
+                voiceMessagesEnabled = voiceMessagesEnabled,
+                isRecording = isRecording,
+                recordingSeconds = recordingSeconds,
+                onStartRecording = {
+                    if (recorder.hasPermission()) startRecording()
+                    else requestMic.launch(android.Manifest.permission.RECORD_AUDIO)
+                },
+                onSendRecording = sendRecording,
+                onCancelRecording = { isRecording = false; recorder.cancel() },
                 onDraftChange = {
                     draft = it
                     chat.setTyping(it.isNotEmpty())
@@ -387,7 +492,14 @@ private fun Composer(
     placeholder: String,
     theme: HiveChatTheme,
     applyWindowInsets: Boolean,
-    onAttach: () -> Unit,
+    onPickPhoto: () -> Unit,
+    onPickFile: () -> Unit,
+    voiceMessagesEnabled: Boolean,
+    isRecording: Boolean,
+    recordingSeconds: Int,
+    onStartRecording: () -> Unit,
+    onSendRecording: () -> Unit,
+    onCancelRecording: () -> Unit,
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
 ) {
@@ -406,12 +518,64 @@ private fun Composer(
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        IconButton(onClick = onAttach, modifier = Modifier.size(46.dp)) {
-            Icon(
-                Icons.Default.AttachFile,
-                contentDescription = "Attach a photo or file",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        if (isRecording) {
+            /* While recording, the row becomes the recording — a text field
+               nobody can type into and a send button that would send an empty
+               message are just clutter at that moment. */
+            IconButton(onClick = onCancelRecording, modifier = Modifier.size(46.dp)) {
+                Icon(Icons.Default.Close, contentDescription = "Cancel recording", tint = MaterialTheme.colorScheme.error)
+            }
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Box(
+                    Modifier.size(9.dp).clip(CircleShape).background(MaterialTheme.colorScheme.error)
+                )
+                Text(
+                    text = "Recording  %d:%02d".format(recordingSeconds / 60, recordingSeconds % 60),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            IconButton(
+                onClick = onSendRecording,
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(CircleShape)
+                    .background(Brush.linearGradient(listOf(theme.brandColor, theme.brandGradientEnd ?: theme.brandColor))),
+            ) {
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send voice message", tint = theme.onBrandColor)
+            }
+            return@Row
+        }
+
+        var attachMenuOpen by remember { mutableStateOf(false) }
+
+        Box {
+            IconButton(onClick = { attachMenuOpen = true }, modifier = Modifier.size(46.dp)) {
+                Icon(
+                    Icons.Default.AttachFile,
+                    contentDescription = "Attach a photo or file",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            DropdownMenu(expanded = attachMenuOpen, onDismissRequest = { attachMenuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text("Photo") },
+                    leadingIcon = { Icon(Icons.Default.Image, contentDescription = null) },
+                    onClick = { attachMenuOpen = false; onPickPhoto() },
+                )
+                DropdownMenuItem(
+                    text = { Text("File") },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.InsertDriveFile, contentDescription = null) },
+                    onClick = { attachMenuOpen = false; onPickFile() },
+                )
+            }
         }
 
         TextField(
@@ -426,6 +590,16 @@ private fun Composer(
             ),
             modifier = Modifier.weight(1f),
         )
+
+        if (voiceMessagesEnabled && draft.isBlank()) {
+            IconButton(onClick = onStartRecording, modifier = Modifier.size(46.dp)) {
+                Icon(
+                    Icons.Default.Mic,
+                    contentDescription = "Record a voice message",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
 
         IconButton(
             onClick = onSend,

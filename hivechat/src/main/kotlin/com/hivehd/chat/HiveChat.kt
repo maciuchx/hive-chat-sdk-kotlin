@@ -4,6 +4,7 @@ import android.util.Log
 import com.hivehd.chat.internal.HiveApiClient
 import com.hivehd.chat.internal.SocketIOConnection
 import com.hivehd.chat.models.Attachment
+import com.hivehd.chat.models.CartItem
 import com.hivehd.chat.models.ChatForm
 import com.hivehd.chat.models.ChatMessage
 import com.hivehd.chat.models.DeviceHandoff
@@ -222,7 +223,14 @@ class HiveChat(
 
     /** Opens the socket. Safe to call repeatedly. */
     fun connect() {
-        connection?.let { it.reconnectNow(); return }
+        connection?.let { existing ->
+            /* Already wired up. Only nudge it if it is not actually connected —
+               calling reconnectNow() unconditionally tore down a perfectly
+               healthy socket every time the chat screen opened, so the customer
+               watched it say "Connecting…" and re-handshake for no reason. */
+            if (_connectionState.value != ConnectionState.Connected) existing.reconnectNow()
+            return
+        }
 
         /* The merchant switched the widget off. Connecting would be refused
            anyway; failing here says why. */
@@ -413,6 +421,64 @@ class HiveChat(
             put("comment", comment.orEmpty())
         })
         _satisfactionRequest.value = null
+    }
+
+    /**
+     * Tells the team which screen the customer is on.
+     *
+     * On the web an agent sees the page someone is browsing, which is half of
+     * how they answer "where's my order?" before it is asked. An app has no
+     * URL, so pass something that reads well in the agent panel — a screen
+     * name, and ideally the thing being looked at.
+     *
+     * ```kotlin
+     * chat.trackScreen("Product", title = "Slim Fit Suit", reference = "slim-fit-suit")
+     * ```
+     *
+     * Safe to call before a conversation exists: it is recorded against the
+     * visitor either way, so an agent picking up the chat can see what they
+     * were looking at beforehand.
+     */
+    fun trackScreen(screen: String, title: String? = null, reference: String? = null) {
+        if (screen.isBlank()) return
+        /* Shaped as a URL because that is the column it lands in and what the
+           agent panel renders. `app://` says plainly this was not a web page,
+           rather than dressing it up as one an agent might try to open. */
+        val path = listOfNotNull(screen.trim().lowercase().replace(' ', '-'), reference?.trim()?.takeIf { it.isNotEmpty() })
+            .joinToString("/")
+        connection?.emit("page:update", JSONObject().apply {
+            put("url", "app://android/\$path")
+            put("title", title ?: screen)
+        })
+    }
+
+    /**
+     * Mirrors the customer's basket to the team.
+     *
+     * An agent seeing what is in the basket can answer "will this arrive before
+     * Friday?" without asking the customer to read their order back. Call it
+     * when the basket changes; it is cheap and only the latest state is kept.
+     *
+     * @param total formatted as you would show it, e.g. "129.99"
+     * @param currency ISO code, e.g. "GBP"
+     */
+    fun updateCart(items: List<CartItem>, total: String, currency: String) {
+        connection?.emit("cart:update", JSONObject().apply {
+            put("items", JSONArray().apply {
+                items.forEach { item ->
+                    put(JSONObject().apply {
+                        put("title", item.title)
+                        put("quantity", item.quantity)
+                        put("price", item.price)
+                        item.variant?.let { put("variant", it) }
+                        item.imageUrl?.let { put("image", it) }
+                    })
+                }
+            })
+            put("total", total)
+            put("currency", currency)
+            put("count", items.sumOf { it.quantity })
+        })
     }
 
     /** Gives the customer's email to the team — what the offline form collects. */

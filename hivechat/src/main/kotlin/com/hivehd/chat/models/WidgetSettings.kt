@@ -120,3 +120,16 @@ data class LinkPreview(
         }
     }
 }
+
+/**
+ * One line in the customer's basket, mirrored to the agent panel by
+ * [com.hivehd.chat.HiveChat.updateCart].
+ */
+data class CartItem(
+    val title: String,
+    val quantity: Int,
+    /** Formatted as you would show it, e.g. "129.99". */
+    val price: String,
+    val variant: String? = null,
+    val imageUrl: String? = null,
+)

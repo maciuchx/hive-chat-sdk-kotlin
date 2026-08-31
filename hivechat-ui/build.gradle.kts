@@ -47,6 +47,8 @@ dependencies {
     // The attachment picker is an activity result, so the UI module needs
     // activity-compose in its own right rather than borrowing the host app's.
     implementation(libs.androidx.activity.compose)
+    /* ContextCompat, for the microphone permission check behind voice notes. */
+    implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.lifecycle.runtime.compose)
     /* For the system file picker behind the attach button. Any app using

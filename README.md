@@ -55,8 +55,8 @@ dependencyResolutionManagement {
 
 ```kotlin
 dependencies {
-    implementation("com.github.maciuchx.hive-chat-sdk-kotlin:hivechat:0.3.0")
-    implementation("com.github.maciuchx.hive-chat-sdk-kotlin:hivechat-ui:0.3.0") // optional
+    implementation("com.github.maciuchx.hive-chat-sdk-kotlin:hivechat:0.4.0")
+    implementation("com.github.maciuchx.hive-chat-sdk-kotlin:hivechat-ui:0.4.0") // optional
 }
 ```
 
@@ -185,6 +185,52 @@ when (val content = message.content) {
 Always handle `Unsupported` by rendering nothing. It exists so an app shipped
 today survives a content type Hive adds tomorrow — your users may be several
 releases behind.
+
+### Giving agents the context they have on the web
+
+On your website an agent sees which page a customer is on and what is in their
+basket. An app has no URL, so tell Hive yourself — then the agent panel shows
+the same thing for app customers.
+
+```kotlin
+// On navigation
+chat.trackScreen("Product", title = "Slim Fit Suit", reference = "slim-fit-suit")
+chat.trackScreen("Basket")
+chat.trackScreen("Order", title = "Order TC-10432", reference = "TC-10432")
+
+// Whenever the basket changes
+chat.updateCart(
+    items = basket.lines.map {
+        CartItem(title = it.name, quantity = it.qty, price = it.price, variant = it.size)
+    },
+    total = basket.total,
+    currency = "GBP",
+)
+```
+
+Both are safe to call before a conversation exists — they are recorded against
+the visitor, so an agent picking the chat up sees what the customer was doing
+beforehand. Without these calls, the agent's browsing history shows only
+"Android app", which is true but not useful.
+
+### Voice messages
+
+Off by default, because recording needs `RECORD_AUDIO` and an SDK should not
+make every host app ask for the microphone. To enable it, declare the
+permission in your manifest and turn it on:
+
+```xml
+<uses-permission android:name="android.permission.RECORD_AUDIO" />
+```
+
+```kotlin
+HiveChatScreen(chat = chat, voiceMessagesEnabled = true)
+```
+
+The mic appears when the message field is empty. Recordings go out as AAC in
+MP4, which agents can play in the dashboard and which survives a hand-off to
+WhatsApp. The SDK asks for the permission when the customer taps the mic, not
+at launch.
 
 ### Keeping the customer inside your app
 
