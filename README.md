@@ -7,7 +7,7 @@ widget on your storefront — no WebView.
 ```kotlin
 val chat = HiveChat(
     HiveChatConfiguration(
-        widgetKey = "wk_live_…",
+        widgetKey = "hv_a1b2c3d4e5f6a1b2c3d4e5f6",
         tokenStore = VisitorTokenStore.sharedPreferences(context),
     )
 )
@@ -62,8 +62,10 @@ dependencies {
 
 ## Getting your widget key
 
-Hive dashboard → **Settings → Live Chat → your widget**. It looks like
-`wk_live_…`.
+Hive dashboard → **Settings → Live Chat → your widget**, or the **Mobile app →
+Native SDK** panel on that widget, which shows the key next to ready-made
+snippets. Keys are `hv_` followed by 24 hex characters, e.g.
+`hv_a1b2c3d4e5f6a1b2c3d4e5f6`.
 
 It is safe to ship in your APK. The same key is already public in the HTML of
 every storefront running the web widget, and it grants exactly one capability:

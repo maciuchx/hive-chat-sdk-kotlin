@@ -44,7 +44,7 @@ import kotlin.coroutines.resumeWithException
  * ```kotlin
  * val chat = HiveChat(
  *     HiveChatConfiguration(
- *         widgetKey = "wk_live_…",
+ *         widgetKey = "hv_a1b2c3d4e5f6a1b2c3d4e5f6",
  *         tokenStore = VisitorTokenStore.sharedPreferences(context),
  *     )
  * )
