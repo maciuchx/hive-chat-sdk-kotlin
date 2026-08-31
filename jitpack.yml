@@ -1,0 +1,3 @@
+# JitPack builds with its own JDK; AGP 9 needs 17+.
+jdk:
+  - openjdk21
