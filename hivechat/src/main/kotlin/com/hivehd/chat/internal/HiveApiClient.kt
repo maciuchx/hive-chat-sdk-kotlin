@@ -56,46 +56,6 @@ internal class HiveApiClient(
         KnowledgeBaseArticle.from(getJson("$base/widget-article/$id"))
     }
 
-    /**
-     * Registers this device so Hive can wake it when a reply lands while the
-     * app is closed.
-     *
-     * Keyed on the visitor token rather than an email, so it works for a
-     * customer who never signed in — which is most of them, on a first
-     * conversation.
-     */
-    suspend fun registerPushDevice(visitorToken: String, deviceToken: String, platform: String) =
-        withContext(Dispatchers.IO) {
-            val body = JSONObject().apply {
-                put("widget_key", widgetKey)
-                put("visitor_token", visitorToken)
-                put("device_token", deviceToken)
-                put("platform", platform)
-            }
-            execute(
-                Request.Builder()
-                    .url("$base/widget-push-device")
-                    .post(body.toString().toRequestBody(JSON_MEDIA_TYPE))
-                    .build()
-            )
-            Unit
-        }
-
-    /** Stops pushes to this device — sent when a customer signs out. */
-    suspend fun unregisterPushDevice(deviceToken: String) = withContext(Dispatchers.IO) {
-        val body = JSONObject().apply {
-            put("widget_key", widgetKey)
-            put("device_token", deviceToken)
-        }
-        execute(
-            Request.Builder()
-                .url("$base/widget-push-device")
-                .delete(body.toString().toRequestBody(JSON_MEDIA_TYPE))
-                .build()
-        )
-        Unit
-    }
-
     suspend fun emailTranscript(sessionId: String, visitorToken: String, email: String) =
         withContext(Dispatchers.IO) {
             val body = JSONObject().apply {

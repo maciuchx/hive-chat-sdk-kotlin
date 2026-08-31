@@ -501,35 +501,35 @@ class HiveChat(
     }
 
     /**
-     * Registers this device's FCM token so Hive can notify the customer when a
-     * reply arrives and the app is closed.
+     * No longer supported. Hive does not send push notifications itself.
      *
-     * Call it once you have a token, and again whenever Firebase rotates one
-     * (`onNewToken`). Registration is tied to this device's visitor token, so
-     * it works for a customer who has never signed in — and it needs nothing
-     * of your backend: Hive sends the notification itself, using the
-     * credentials your team pasted into Settings → Live Chat → Mobile Push.
+     * It briefly could, using credentials a merchant pasted into the
+     * dashboard — removed because an app that already has push ends up with
+     * two systems notifying the same phone, with duplicate alerts, badge
+     * counts that disagree and the app's own notification preferences
+     * bypassed. Storing other people's signing keys was also a poor thing to
+     * carry for a feature so easily done better by the app itself.
      *
-     * Safe to call before a conversation exists.
+     * Notify from your own backend instead: Hive tells it when a reply could
+     * not be delivered, either by webhook or by a feed you poll. Both are in
+     * Settings → Live Chat → Mobile Push.
      */
+    @Deprecated(
+        "Hive no longer sends push itself — notify from your own backend using the push webhook.",
+        level = DeprecationLevel.WARNING,
+    )
+    @Suppress("UNUSED_PARAMETER")
     fun registerDeviceToken(fcmToken: String) {
-        if (fcmToken.isBlank()) return
-        scope.launch {
-            runCatching { api.registerPushDevice(visitorToken, fcmToken, "android") }
-                .onFailure { log("device registration failed: \${it.message}") }
-        }
+        log("registerDeviceToken is no longer supported — see Settings → Live Chat → Mobile Push")
     }
 
-    /**
-     * Stops pushes to this device. Call on sign-out, so the next person using
-     * the phone is not notified about a conversation that was never theirs.
-     */
+    @Deprecated(
+        "Hive no longer sends push itself — notify from your own backend using the push webhook.",
+        level = DeprecationLevel.WARNING,
+    )
+    @Suppress("UNUSED_PARAMETER")
     fun unregisterDeviceToken(fcmToken: String) {
-        if (fcmToken.isBlank()) return
-        scope.launch {
-            runCatching { api.unregisterPushDevice(fcmToken) }
-                .onFailure { log("device unregistration failed: \${it.message}") }
-        }
+        log("unregisterDeviceToken is no longer supported — see Settings → Live Chat → Mobile Push")
     }
 
     /** Gives the customer's email to the team — what the offline form collects. */
