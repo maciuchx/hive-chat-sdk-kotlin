@@ -28,12 +28,16 @@ internal class HiveApiClient(
     private val widgetKey: String,
     private val client: OkHttpClient,
 ) {
-    /* Both /livechat and /api/livechat are mounted server-side; the web
-       widget uses the bare one. We take /api because that prefix is the one
-       nginx is guaranteed to proxy (it is why Socket.IO was moved under it),
-       so a merchant fronting Hive with their own edge config is far less
-       likely to have a hole where the SDK's calls land. */
-    private val base = "${host.trimEnd('/')}/api/livechat"
+    /* The visitor endpoints live at the bare /livechat prefix, which is what
+       the web widget calls and what the server leaves open to a widget key.
+
+       This used to be /api/livechat on the assumption that both were mounted
+       and that the /api one was the safer bet behind nginx. It is mounted, but
+       it sits behind the dashboard's auth: every call from a widget key came
+       back 401, so configuration, KB search, transcript and upload all failed
+       silently while the socket carried on working. Socket.IO is the genuine
+       exception and stays under /api — see SocketIOConnection. */
+    private val base = "${host.trimEnd('/')}/livechat"
 
     suspend fun widgetSettings(): WidgetSettings = withContext(Dispatchers.IO) {
         WidgetSettings.from(getJson("$base/widget-config/$widgetKey"))

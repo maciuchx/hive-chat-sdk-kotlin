@@ -5,7 +5,7 @@ import org.json.JSONObject
 
 /**
  * The merchant's widget settings, from
- * `GET /api/livechat/widget-config/:widgetKey`.
+ * `GET /livechat/widget-config/:widgetKey`.
  *
  * The same document drives the web widget, so it carries browser-specific
  * styling (launcher offsets, URL visibility rules) that means nothing on a
