@@ -1,6 +1,9 @@
 package com.hivehd.chat.ui
 
 import android.content.Intent
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -14,18 +17,26 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -34,6 +45,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -41,6 +53,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,9 +65,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import android.net.Uri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.hivehd.chat.ConnectionState
 import com.hivehd.chat.HiveChat
 import com.hivehd.chat.models.ChatMessage
+import com.hivehd.chat.models.KnowledgeBaseArticle
 import com.hivehd.chat.models.MessageContent
 import com.hivehd.chat.models.ProductCard
 
@@ -89,6 +106,14 @@ fun HiveChatScreen(
      * the SDK open it in a browser.
      */
     onOpenUrl: ((String) -> Boolean)? = null,
+    /**
+     * Whether the chat handles the keyboard and navigation-bar insets itself.
+     *
+     * Leave it on unless your own layout already pads for them — a host that
+     * applies `imePadding()` around this screen and leaves this true will see
+     * the composer sit a keyboard's height too high.
+     */
+    applyWindowInsets: Boolean = true,
 ) {
     val settings by chat.widgetSettings.collectAsStateWithLifecycle()
     val messages by chat.messages.collectAsStateWithLifecycle()
@@ -117,6 +142,32 @@ fun HiveChatScreen(
         if (target >= 0) listState.animateScrollToItem(target)
     }
 
+    val scope = rememberCoroutineScope()
+    var article by remember { mutableStateOf<KnowledgeBaseArticle?>(null) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    /* Photos and documents go through the system picker, so the SDK needs no
+       storage permission of its own — the host app declares none either. We
+       read the bytes the picker granted us and hand them to the uploader. */
+    val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            try {
+                val resolver = context.contentResolver
+                val bytes = withContext(Dispatchers.IO) {
+                    resolver.openInputStream(uri)?.use { it.readBytes() }
+                } ?: throw IllegalStateException("That file could not be read.")
+                chat.send(
+                    fileBytes = bytes,
+                    filename = uri.displayName(context) ?: "upload",
+                    contentType = resolver.getType(uri) ?: "application/octet-stream",
+                )
+            } catch (e: Throwable) {
+                errorMessage = e.message ?: "That file could not be sent."
+            }
+        }
+    }
+
     val openUrl: (String) -> Unit = { url ->
         /* The host app gets first refusal on every link. Only if it declines
            does the customer leave for a browser. */
@@ -126,7 +177,8 @@ fun HiveChatScreen(
     }
 
     Surface(modifier = modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().imePadding()) {
+        val focusManager = LocalFocusManager.current
+        Column(Modifier.fillMaxSize()) {
             ChatHeader(
                 storeName = settings?.storeName.orEmpty(),
                 emoji = settings?.logoEmoji ?: "💬",
@@ -138,7 +190,24 @@ fun HiveChatScreen(
 
             LazyColumn(
                 state = listState,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    /*
+                     * Tapping the transcript puts the keyboard away.
+                     *
+                     * Every messaging app does this, so its absence reads as
+                     * the screen being stuck: there was no way back to the
+                     * conversation except the system back gesture, which on
+                     * this screen looks like it should leave the chat.
+                     *
+                     * onTap fires only for taps no child claimed, so tapping a
+                     * reaction, a link or a product card still does its own
+                     * thing rather than merely closing the keyboard.
+                     */
+                    .pointerInput(Unit) {
+                        detectTapGestures(onTap = { focusManager.clearFocus() })
+                    },
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(14.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -171,7 +240,22 @@ fun HiveChatScreen(
                         previews = linkPreviews[message.id].orEmpty(),
                         theme = resolvedTheme,
                         onReact = { chat.toggleReaction(it, message.id) },
-                        onOpenArticle = { id -> onOpenArticle?.invoke(id) },
+                        onOpenArticle = { id ->
+                            if (onOpenArticle != null) {
+                                onOpenArticle(id)
+                            } else {
+                                /* No host handler, so read it in place — the
+                                   card is useless otherwise, and the website
+                                   widget opens it inline too. Fetched first:
+                                   the card carries a title and excerpt but
+                                   not the body. */
+                                scope.launch {
+                                    runCatching { chat.article(id) }
+                                        .onSuccess { article = it }
+                                        .onFailure { errorMessage = "That article could not be loaded." }
+                                }
+                            }
+                        },
                         onProductClick = onProductClick,
                         onSubmitForm = { values ->
                             (message.content as? MessageContent.Form)?.let {
@@ -201,6 +285,8 @@ fun HiveChatScreen(
                 draft = draft,
                 placeholder = settings?.placeholderText ?: "Type your message…",
                 theme = resolvedTheme,
+                applyWindowInsets = applyWindowInsets,
+                onAttach = { pickFile.launch(arrayOf("image/*", "application/pdf")) },
                 onDraftChange = {
                     draft = it
                     chat.setTyping(it.isNotEmpty())
@@ -213,7 +299,24 @@ fun HiveChatScreen(
             )
         }
     }
+
+    article?.let { ArticleReader(it) { article = null } }
+
+    errorMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = { errorMessage = null },
+            confirmButton = { TextButton(onClick = { errorMessage = null }) { Text("OK") } },
+            text = { Text(message) },
+        )
+    }
 }
+
+/** Reads a display name from a content Uri, falling back to its last segment. */
+private fun Uri.displayName(context: android.content.Context): String? =
+    runCatching {
+        context.contentResolver.query(this, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { if (it.moveToFirst()) it.getString(0) else null }
+    }.getOrNull() ?: lastPathSegment
 
 private fun statusText(
     state: ConnectionState,
@@ -283,17 +386,34 @@ private fun Composer(
     draft: String,
     placeholder: String,
     theme: HiveChatTheme,
+    applyWindowInsets: Boolean,
+    onAttach: () -> Unit,
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .navigationBarsPadding()
+            /* One inset, applied once, in one place.
+               This used to be imePadding() on the root column AND
+               navigationBarsPadding() here, which stacks: with the keyboard
+               up you got the keyboard's height plus the nav bar's, leaving
+               the composer floating well above the keys. `union` takes the
+               larger of the two — the keyboard when it is open (it already
+               covers the nav bar), the nav bar when it is not. */
+            .then(if (applyWindowInsets) Modifier.windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars)) else Modifier)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        IconButton(onClick = onAttach, modifier = Modifier.size(46.dp)) {
+            Icon(
+                Icons.Default.AttachFile,
+                contentDescription = "Attach a photo or file",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
         TextField(
             value = draft,
             onValueChange = onDraftChange,

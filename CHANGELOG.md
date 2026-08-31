@@ -5,6 +5,27 @@ semantic versioning from 1.0 onwards.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-08-31
+
+### Fixed
+- **The composer no longer floats above the keyboard.** Insets were applied
+  twice — `imePadding()` on the root plus `navigationBarsPadding()` on the
+  composer — stacking the keyboard's height and the navigation bar's. They are
+  now applied once, as `WindowInsets.ime.union(WindowInsets.navigationBars)`,
+  which takes the larger of the two.
+
+### Added
+- **Attach a photo or file.** The core could always upload; there was no way to
+  ask for one. Goes through the system picker, so neither the SDK nor your app
+  needs a storage permission.
+- **Long-press a message to react.** Reaction chips rendered but nothing could
+  add one — the same six emoji the web widget offers.
+- **Help articles open in the app.** Tapping an article card previously did
+  nothing unless the host passed `onOpenArticle`; there is now a built-in
+  reader, matching the web widget. Pass `onOpenArticle` to override it.
+- `HiveChatScreen(applyWindowInsets =)` for hosts that pad for the keyboard
+  themselves.
+
 ## [0.2.0] — 2026-08-31
 
 ### Added

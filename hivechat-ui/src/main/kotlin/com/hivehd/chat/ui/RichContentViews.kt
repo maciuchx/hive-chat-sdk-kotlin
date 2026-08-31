@@ -14,10 +14,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -111,7 +111,7 @@ internal fun ArticleCardView(card: ArticleCard, theme: HiveChatTheme, onOpen: ()
                 .background(theme.brandColor.copy(alpha = 0.12f)),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Default.Article, contentDescription = null, tint = theme.brandColor, modifier = Modifier.size(18.dp))
+            Icon(Icons.AutoMirrored.Filled.Article, contentDescription = null, tint = theme.brandColor, modifier = Modifier.size(18.dp))
         }
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
@@ -169,7 +169,7 @@ internal fun AttachmentView(attachment: Attachment, onOpenUrl: (String) -> Unit)
                 imageVector = when (attachment.kind) {
                     Attachment.Kind.VIDEO -> Icons.Default.PlayCircle
                     Attachment.Kind.AUDIO -> Icons.Default.AudioFile
-                    else -> Icons.Default.InsertDriveFile
+                    else -> Icons.AutoMirrored.Filled.InsertDriveFile
                 },
                 contentDescription = null,
                 modifier = Modifier.size(20.dp),

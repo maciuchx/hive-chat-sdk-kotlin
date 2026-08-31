@@ -3,6 +3,7 @@ package com.hivehd.chat.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,7 +23,14 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,6 +49,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** One row in the thread: a bubble, a card, or a system line. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun MessageRow(
     message: ChatMessage,
@@ -86,6 +95,7 @@ private fun CardRow(alignment: Alignment.Horizontal, content: @Composable () -> 
     ) { content() }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun BubbleRow(
     message: ChatMessage,
@@ -128,10 +138,18 @@ private fun BubbleRow(
             bottomEnd = if (isOutgoing) 4.dp else theme.cornerRadius,
         )
 
+        var pickerOpen by remember { mutableStateOf(false) }
+
         Column(
             modifier = Modifier
                 .widthIn(max = 300.dp)
                 .clip(shape)
+                /* Long-press to react, matching the web widget's picker and
+                   the platform gesture people already expect from a chat. */
+                .combinedClickable(
+                    onClick = {},
+                    onLongClick = { pickerOpen = true },
+                )
                 .then(
                     if (isOutgoing) {
                         Modifier.background(
@@ -153,6 +171,13 @@ private fun BubbleRow(
                     color = if (isOutgoing) theme.onBrandColor else MaterialTheme.colorScheme.onSurface,
                 )
             }
+        }
+
+        if (pickerOpen) {
+            ReactionPicker(
+                onPick = { emoji -> onReact(emoji); pickerOpen = false },
+                onDismiss = { pickerOpen = false },
+            )
         }
 
         previews.forEach { LinkPreviewView(it, onOpenUrl) }
@@ -268,3 +293,35 @@ private fun LinkPreviewView(preview: LinkPreview, onOpenUrl: (String) -> Unit) {
 }
 
 private val TIME_FORMAT = SimpleDateFormat("HH:mm", Locale.getDefault())
+
+/** The six reactions the web widget offers, so both clients agree. */
+private val REACTION_EMOJIS = listOf("👍", "❤️", "😂", "😮", "😢", "🎉")
+
+@Composable
+private fun ReactionPicker(onPick: (String) -> Unit, onDismiss: () -> Unit) {
+    Popup(
+        alignment = Alignment.TopStart,
+        onDismissRequest = onDismiss,
+        properties = PopupProperties(focusable = true),
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(top = 4.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            REACTION_EMOJIS.forEach { emoji ->
+                Text(
+                    text = emoji,
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable { onPick(emoji) }
+                        .padding(horizontal = 5.dp, vertical = 3.dp),
+                )
+            }
+        }
+    }
+}

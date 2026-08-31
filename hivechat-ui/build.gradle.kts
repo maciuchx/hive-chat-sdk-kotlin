@@ -44,8 +44,14 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    // The attachment picker is an activity result, so the UI module needs
+    // activity-compose in its own right rather than borrowing the host app's.
+    implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.lifecycle.runtime.compose)
+    /* For the system file picker behind the attach button. Any app using
+       Compose already has this on the classpath. */
+    implementation(libs.androidx.activity.compose)
     implementation(libs.coil.compose)
 }
 
