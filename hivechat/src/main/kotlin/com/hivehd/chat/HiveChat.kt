@@ -447,7 +447,7 @@ class HiveChat(
         val path = listOfNotNull(screen.trim().lowercase().replace(' ', '-'), reference?.trim()?.takeIf { it.isNotEmpty() })
             .joinToString("/")
         connection?.emit("page:update", JSONObject().apply {
-            put("url", "app://android/\$path")
+            put("url", "app://android/$path")
             put("title", title ?: screen)
         })
     }

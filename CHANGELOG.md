@@ -5,6 +5,19 @@ semantic versioning from 1.0 onwards.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-08-31
+
+### Fixed
+- **`trackScreen()` emitted a literal `app://android/$path`** on every call —
+  the interpolation was escaped, so the path it had just built was thrown
+  away and every screen looked identical in the agent panel. Now pinned by a
+  test that asserts the exact string.
+
+### Changed
+- The microphone gives way as soon as the message field is focused, not only
+  once something is typed: a raised keyboard is intent enough. It returns when
+  the keyboard is dismissed with nothing written.
+
 ## [0.4.0] — 2026-08-31
 
 ### Fixed

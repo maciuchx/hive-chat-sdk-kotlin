@@ -69,6 +69,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -555,6 +556,7 @@ private fun Composer(
         }
 
         var attachMenuOpen by remember { mutableStateOf(false) }
+        var isFieldFocused by remember { mutableStateOf(false) }
 
         Box {
             IconButton(onClick = { attachMenuOpen = true }, modifier = Modifier.size(46.dp)) {
@@ -588,10 +590,16 @@ private fun Composer(
                 focusedIndicatorColor = Color.Transparent,
                 unfocusedIndicatorColor = Color.Transparent,
             ),
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .onFocusChanged { isFieldFocused = it.isFocused },
         )
 
-        if (voiceMessagesEnabled && draft.isBlank()) {
+        /* The mic gives way the moment someone is clearly composing text —
+           either they have typed something, or the field is focused and the
+           keyboard is up, which is intent enough. It comes back when they
+           dismiss the keyboard without having typed. */
+        if (voiceMessagesEnabled && draft.isBlank() && !isFieldFocused) {
             IconButton(onClick = onStartRecording, modifier = Modifier.size(46.dp)) {
                 Icon(
                     Icons.Default.Mic,
