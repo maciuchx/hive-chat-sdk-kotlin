@@ -55,8 +55,8 @@ dependencyResolutionManagement {
 
 ```kotlin
 dependencies {
-    implementation("com.github.maciuchx.hive-chat-sdk-kotlin:hivechat:0.6.0")
-    implementation("com.github.maciuchx.hive-chat-sdk-kotlin:hivechat-ui:0.6.0") // optional
+    implementation("com.github.maciuchx.hive-chat-sdk-kotlin:hivechat:0.7.0")
+    implementation("com.github.maciuchx.hive-chat-sdk-kotlin:hivechat-ui:0.7.0") // optional
 }
 ```
 
@@ -185,6 +185,32 @@ when (val content = message.content) {
 Always handle `Unsupported` by rendering nothing. It exists so an app shipped
 today survives a content type Hive adds tomorrow — your users may be several
 releases behind.
+
+### Push notifications
+
+Two lines, and Hive sends them — no backend of yours involved.
+
+```kotlin
+// Wherever you already receive the FCM token, and again in onNewToken
+chat.registerDeviceToken(fcmToken)
+
+// On sign-out, so the next person on this phone is not notified
+chat.unregisterDeviceToken(fcmToken)
+```
+
+Your team pastes the app's Firebase service account into **Settings → Live
+Chat → Mobile Push** once, and Hive notifies the customer whenever a reply
+lands while the app is closed. Google will not let anyone send to your app
+without that key, so pasting it is the floor — but it is the whole of it: no
+endpoint of yours to expose, no polling loop, and nothing to configure on your
+domain.
+
+Registration is keyed on the device's visitor token rather than an email, so
+it works for a customer who has never signed in.
+
+If you would rather Hive never held your signing key, the same events are
+available as a webhook to your backend or as a feed you poll — both in the
+same settings panel.
 
 ### Notifying the customer
 

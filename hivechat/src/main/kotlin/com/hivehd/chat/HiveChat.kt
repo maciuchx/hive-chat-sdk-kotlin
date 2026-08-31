@@ -500,6 +500,38 @@ class HiveChat(
         })
     }
 
+    /**
+     * Registers this device's FCM token so Hive can notify the customer when a
+     * reply arrives and the app is closed.
+     *
+     * Call it once you have a token, and again whenever Firebase rotates one
+     * (`onNewToken`). Registration is tied to this device's visitor token, so
+     * it works for a customer who has never signed in — and it needs nothing
+     * of your backend: Hive sends the notification itself, using the
+     * credentials your team pasted into Settings → Live Chat → Mobile Push.
+     *
+     * Safe to call before a conversation exists.
+     */
+    fun registerDeviceToken(fcmToken: String) {
+        if (fcmToken.isBlank()) return
+        scope.launch {
+            runCatching { api.registerPushDevice(visitorToken, fcmToken, "android") }
+                .onFailure { log("device registration failed: \${it.message}") }
+        }
+    }
+
+    /**
+     * Stops pushes to this device. Call on sign-out, so the next person using
+     * the phone is not notified about a conversation that was never theirs.
+     */
+    fun unregisterDeviceToken(fcmToken: String) {
+        if (fcmToken.isBlank()) return
+        scope.launch {
+            runCatching { api.unregisterPushDevice(fcmToken) }
+                .onFailure { log("device unregistration failed: \${it.message}") }
+        }
+    }
+
     /** Gives the customer's email to the team — what the offline form collects. */
     fun provideEmail(email: String) {
         visitorEmail = email

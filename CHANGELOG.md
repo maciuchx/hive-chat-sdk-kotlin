@@ -5,6 +5,15 @@ semantic versioning from 1.0 onwards.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-08-31
+
+### Added
+- `registerDeviceToken()` / `unregisterDeviceToken()` — Hive sends the push
+  itself once your team pastes the app's Firebase credentials into the
+  dashboard. No endpoint of yours, no polling, nothing to configure on your
+  domain. Keyed on the visitor token, so it works for customers who never
+  signed in.
+
 ## [0.6.0] — 2026-08-31
 
 ### Added
