@@ -128,6 +128,25 @@ class HiveChat(
      */
     val sessionId: StateFlow<String?> = _sessionId.asStateFlow()
 
+    /**
+     * Called when a message arrives from the team while the app is running.
+     *
+     * This is the half of notifications that needs no server: the app is
+     * awake, the socket is connected, and you already have the message — so
+     * raise an in-app banner, or post a local notification if the chat screen
+     * is not the one on top.
+     *
+     * Only fires for live arrivals from the team, never for the customer's own
+     * messages and never for the thread replayed on reconnect — a customer
+     * returning to the app should not be notified about messages they have
+     * already read.
+     *
+     * It cannot help while the app is closed. A suspended app runs no code, so
+     * nothing local can notice a message or raise anything; only a push sent
+     * by a server can wake it. That is what the push webhook is for.
+     */
+    var onMessageReceived: ((ChatMessage) -> Unit)? = null
+
     /** Called when an agent proactively invites the customer into a chat. */
     var onProactiveInvitation: ((String) -> Unit)? = null
 
@@ -713,6 +732,7 @@ class HiveChat(
         if (message.sender != ChatMessage.Sender.VISITOR) {
             if (configuration.marksMessagesReadAutomatically) markRead()
             else _unreadCount.update { it + 1 }
+            onMessageReceived?.invoke(message)
         }
     }
 

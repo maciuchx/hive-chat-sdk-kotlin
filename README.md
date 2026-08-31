@@ -55,8 +55,8 @@ dependencyResolutionManagement {
 
 ```kotlin
 dependencies {
-    implementation("com.github.maciuchx.hive-chat-sdk-kotlin:hivechat:0.5.0")
-    implementation("com.github.maciuchx.hive-chat-sdk-kotlin:hivechat-ui:0.5.0") // optional
+    implementation("com.github.maciuchx.hive-chat-sdk-kotlin:hivechat:0.6.0")
+    implementation("com.github.maciuchx.hive-chat-sdk-kotlin:hivechat-ui:0.6.0") // optional
 }
 ```
 
@@ -185,6 +185,30 @@ when (val content = message.content) {
 Always handle `Unsupported` by rendering nothing. It exists so an app shipped
 today survives a content type Hive adds tomorrow — your users may be several
 releases behind.
+
+### Notifying the customer
+
+Two halves, and only one of them needs a server.
+
+**While your app is running**, the socket is connected and the SDK already has
+the message — no server involved:
+
+```kotlin
+chat.onMessageReceived = { message ->
+    if (!chatScreenIsVisible) {
+        notificationManager.notify(id, buildLocalNotification(message.content.previewText))
+    }
+}
+```
+
+**While your app is closed**, nothing local can help. A suspended app runs no
+code, so it cannot notice a message, and it cannot raise a notification about
+one it never saw. Only a push sent by a server can wake it — which is what
+Hive's push webhook exists for: it tells your backend a reply went undelivered,
+and your backend sends the push with the FCM credentials it already has.
+
+Having Firebase in your app is what lets it *receive* a push. Something still
+has to *send* one.
 
 ### Giving agents the context they have on the web
 
