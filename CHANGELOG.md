@@ -5,6 +5,17 @@ semantic versioning from 1.0 onwards.
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-08-31
+
+### Fixed
+- **JitPack can build this now.** 0.1.0 declared no Maven publication, so
+  JitPack injected its own — in Groovy, into a Kotlin DSL build file, where
+  `singleVariant('release')` is a character literal. Every build died with
+  "Too many characters in a character literal" before compiling any Kotlin.
+  Both modules now declare their own publication, with sources jars.
+- Documented the widget key in the format Hive actually issues (`hv_` + 24 hex
+  characters); earlier examples showed an invented `wk_live_…` prefix.
+
 ## [0.1.0] — 2026-08-31
 
 First release. Implements the Hive visitor protocol as documented in

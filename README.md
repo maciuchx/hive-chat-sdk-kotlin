@@ -55,8 +55,8 @@ dependencyResolutionManagement {
 
 ```kotlin
 dependencies {
-    implementation("com.github.maciuchx.hive-chat-sdk-kotlin:hivechat:0.1.0")
-    implementation("com.github.maciuchx.hive-chat-sdk-kotlin:hivechat-ui:0.1.0") // optional
+    implementation("com.github.maciuchx.hive-chat-sdk-kotlin:hivechat:0.1.1")
+    implementation("com.github.maciuchx.hive-chat-sdk-kotlin:hivechat-ui:0.1.1") // optional
 }
 ```
 
