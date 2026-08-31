@@ -186,6 +186,29 @@ Always handle `Unsupported` by rendering nothing. It exists so an app shipped
 today survives a content type Hive adds tomorrow — your users may be several
 releases behind.
 
+### Keeping the customer inside your app
+
+The bot and your agents can send **product cards** — the same ones the website
+chat sends. By default tapping one opens its `buyUrl` in a browser, which walks
+the customer out of the conversation. Handle it yourself instead:
+
+```kotlin
+HiveChatScreen(
+    chat = chat,
+    onProductClick = { product ->
+        // The card carries title, imageUrl, price and buyUrl. Recover your own
+        // product id or handle from buyUrl and navigate natively.
+        val handle = product.buyUrl?.toUri()?.lastPathSegment ?: return@HiveChatScreen
+        navController.navigate("product/$handle")
+    },
+    onOpenUrl = { url ->
+        val route = deepLinks.routeFor(url) ?: return@HiveChatScreen false // false → open a browser
+        navController.navigate(route)
+        true
+    },
+)
+```
+
 ### Theming
 
 Colours come from the merchant's widget settings by default:

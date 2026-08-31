@@ -51,14 +51,23 @@ import com.hivehd.chat.models.FormResponse
 import com.hivehd.chat.models.ProductCard
 
 @Composable
-internal fun ProductCardView(card: ProductCard, theme: HiveChatTheme, onOpenUrl: (String) -> Unit) {
+internal fun ProductCardView(
+    card: ProductCard,
+    theme: HiveChatTheme,
+    onOpenUrl: (String) -> Unit,
+    onProductClick: ((ProductCard) -> Unit)? = null,
+) {
     Column(
         modifier = Modifier
             .widthIn(max = 300.dp)
             .clip(RoundedCornerShape(theme.cornerRadius))
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(theme.cornerRadius))
             .background(MaterialTheme.colorScheme.surface)
-            .clickable(enabled = card.buyUrl != null) { card.buyUrl?.let(onOpenUrl) },
+            /* Tappable whenever the host can do something with it: either it
+               handles products itself, or we have a URL to fall back on. */
+            .clickable(enabled = onProductClick != null || card.buyUrl != null) {
+                if (onProductClick != null) onProductClick(card) else card.buyUrl?.let(onOpenUrl)
+            },
     ) {
         card.imageUrl?.let { image ->
             AsyncImage(

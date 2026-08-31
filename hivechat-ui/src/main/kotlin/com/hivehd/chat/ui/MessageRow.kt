@@ -35,6 +35,7 @@ import coil.compose.AsyncImage
 import com.hivehd.chat.models.ChatMessage
 import com.hivehd.chat.models.LinkPreview
 import com.hivehd.chat.models.MessageContent
+import com.hivehd.chat.models.ProductCard
 import com.hivehd.chat.models.Reaction
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -49,10 +50,11 @@ internal fun MessageRow(
     onOpenArticle: (String) -> Unit,
     onSubmitForm: (Map<String, String>) -> Unit,
     onOpenUrl: (String) -> Unit,
+    onProductClick: ((ProductCard) -> Unit)? = null,
 ) {
     when (val content = message.content) {
         is MessageContent.Product -> CardRow(Alignment.Start) {
-            ProductCardView(content.card, theme, onOpenUrl)
+            ProductCardView(content.card, theme, onOpenUrl, onProductClick)
         }
 
         is MessageContent.Article -> CardRow(Alignment.Start) {

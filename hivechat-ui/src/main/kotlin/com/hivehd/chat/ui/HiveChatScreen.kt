@@ -56,6 +56,7 @@ import com.hivehd.chat.ConnectionState
 import com.hivehd.chat.HiveChat
 import com.hivehd.chat.models.ChatMessage
 import com.hivehd.chat.models.MessageContent
+import com.hivehd.chat.models.ProductCard
 
 /**
  * A complete chat screen, ready to drop into a route.
@@ -73,6 +74,21 @@ fun HiveChatScreen(
     modifier: Modifier = Modifier,
     theme: HiveChatTheme? = null,
     onOpenArticle: ((String) -> Unit)? = null,
+    /**
+     * Called when the customer taps a product the bot or an agent sent.
+     *
+     * Without this the card opens its `buyUrl` in a browser, which walks the
+     * customer out of your app mid-conversation. Handle it here to push your
+     * own product screen instead — the card carries the title, image, price
+     * and URL, and you can recover a product id or handle from [ProductCard.buyUrl].
+     */
+    onProductClick: ((ProductCard) -> Unit)? = null,
+    /**
+     * Called before any link is opened externally. Return `true` if you
+     * handled it (a deep link into your own app, say); return `false` to let
+     * the SDK open it in a browser.
+     */
+    onOpenUrl: ((String) -> Boolean)? = null,
 ) {
     val settings by chat.widgetSettings.collectAsStateWithLifecycle()
     val messages by chat.messages.collectAsStateWithLifecycle()
@@ -102,7 +118,11 @@ fun HiveChatScreen(
     }
 
     val openUrl: (String) -> Unit = { url ->
-        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+        /* The host app gets first refusal on every link. Only if it declines
+           does the customer leave for a browser. */
+        if (onOpenUrl?.invoke(url) != true) {
+            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+        }
     }
 
     Surface(modifier = modifier.fillMaxSize()) {
@@ -139,6 +159,7 @@ fun HiveChatScreen(
                                 onOpenArticle = {},
                                 onSubmitForm = {},
                                 onOpenUrl = openUrl,
+                                onProductClick = onProductClick,
                             )
                         }
                     }
@@ -151,6 +172,7 @@ fun HiveChatScreen(
                         theme = resolvedTheme,
                         onReact = { chat.toggleReaction(it, message.id) },
                         onOpenArticle = { id -> onOpenArticle?.invoke(id) },
+                        onProductClick = onProductClick,
                         onSubmitForm = { values ->
                             (message.content as? MessageContent.Form)?.let {
                                 chat.submit(it.form, values)
