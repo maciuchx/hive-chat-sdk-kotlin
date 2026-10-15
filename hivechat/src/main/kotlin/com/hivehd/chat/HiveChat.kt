@@ -163,6 +163,8 @@ class HiveChat(
     private var visitorToken: String
     private var visitorName: String? = null
     private var visitorEmail: String? = null
+    private var visitorUserId: String? = null
+    private var visitorUserHash: String? = null
     private var consentText: String? = null
     private var handoffCode: String? = null
 
@@ -192,18 +194,27 @@ class HiveChat(
      * Tells Hive who the customer is, so the agent sees a name rather than
      * "Visitor" and the conversation threads onto their customer record.
      *
-     * Hive does not currently verify this — anything your app sends is taken
-     * at face value. Treat it as a display convenience, not as proof of who
-     * the customer is.
+     * To have the customer **verified**, pass [userHash]: an HMAC-SHA256 (hex)
+     * of the email, lowercased — or of [userId] when you have no email — made
+     * by *your server* with the widget's identity secret (Hive → Settings →
+     * Developers → Mobile SDKs). Never put the secret in the app. Hive then
+     * marks the chat "Verified by your site or app" and the email can't be
+     * changed from the chat. A hash that doesn't match is ignored together
+     * with the name and email that came with it. Without a hash, what you
+     * send is shown but unverified.
      */
-    fun identify(name: String? = null, email: String? = null) {
+    fun identify(name: String? = null, email: String? = null, userId: String? = null, userHash: String? = null) {
         name?.takeIf { it.isNotBlank() }?.let { visitorName = it }
         email?.takeIf { it.isNotBlank() }?.let { visitorEmail = it }
+        userId?.takeIf { it.isNotBlank() }?.let { visitorUserId = it }
+        userHash?.takeIf { it.isNotBlank() }?.let { visitorUserHash = it }
 
         if (_connectionState.value != ConnectionState.Connected) return
         connection?.emit("visitor:info", JSONObject().apply {
             put("name", visitorName.orEmpty())
             put("email", visitorEmail.orEmpty())
+            visitorUserId?.let { put("userId", it) }
+            visitorUserHash?.let { put("userHash", it) }
         })
     }
 
@@ -295,11 +306,13 @@ class HiveChat(
         scope.cancel()
     }
 
-    private fun buildAuth(): JSONObject = JSONObject().apply {
+    internal fun buildAuth(): JSONObject = JSONObject().apply {
         put("widgetKey", configuration.widgetKey)
         put("visitorToken", visitorToken)
         put("name", visitorName.orEmpty())
         put("email", visitorEmail.orEmpty())
+        visitorUserId?.let { put("userId", it) }
+        visitorUserHash?.let { put("userHash", it) }
         handoffCode?.let { put("handoffCode", it) }
         consentText?.let { put("consentText", it) }
         /* pageUrl/pageTitle are web concepts the agent panel shows as "what
@@ -637,7 +650,7 @@ class HiveChat(
         /* Re-assert identity on every connect. The handshake carries it too,
            but a name captured after the socket opened would otherwise not
            reach the agent panel until the next reconnect. */
-        if (visitorName != null || visitorEmail != null) identify()
+        if (visitorName != null || visitorEmail != null || visitorUserHash != null) identify()
         flushOutbox()
     }
 

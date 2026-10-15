@@ -55,8 +55,8 @@ dependencyResolutionManagement {
 
 ```kotlin
 dependencies {
-    implementation("com.github.maciuchx.hive-chat-sdk-kotlin:hivechat:0.8.0")
-    implementation("com.github.maciuchx.hive-chat-sdk-kotlin:hivechat-ui:0.8.0") // optional
+    implementation("com.github.maciuchx.hive-chat-sdk-kotlin:hivechat:0.9.0")
+    implementation("com.github.maciuchx.hive-chat-sdk-kotlin:hivechat-ui:0.9.0") // optional
 }
 ```
 
@@ -112,9 +112,18 @@ Call before `start()` when you know who they are.
 chat.identify(name = customer.name, email = customer.email)
 ```
 
-> **Identity is not verified.** Hive currently takes whatever your app sends at
-> face value. Treat it as a display convenience, not proof of who the customer
-> is. Signed identity is on the roadmap — see [PROTOCOL.md](PROTOCOL.md#identity).
+On its own that is **unverified** — shown to the agent, not proof of who is
+talking. To verify the customer, have **your server** sign their email with the
+widget's identity secret (Hive → Settings → Developers → Mobile SDKs) and pass
+the result:
+
+```kotlin
+// userHash = hex(HMAC-SHA256(identitySecret, email.lowercase())) — made on your server
+chat.identify(name = customer.name, email = customer.email, userHash = hashFromYourServer)
+```
+
+Never put the identity secret in the app. No email? Pass `userId =` and sign
+that instead. See [PROTOCOL.md](PROTOCOL.md#8-identity).
 
 ### Badge your entry point
 

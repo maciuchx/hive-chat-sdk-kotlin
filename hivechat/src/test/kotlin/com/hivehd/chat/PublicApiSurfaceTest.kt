@@ -67,4 +67,23 @@ class PublicApiSurfaceTest {
         chat.redeemHandoffCode("ABC123")
         chat.close()
     }
+
+    @Test
+    fun `signed identity reaches the handshake`() {
+        val chat = chat()
+        chat.identify(name = "Alex", email = "alex@example.com", userId = "42", userHash = "abc123")
+        val auth = chat.buildAuth()
+        org.junit.Assert.assertEquals("alex@example.com", auth.getString("email"))
+        org.junit.Assert.assertEquals("42", auth.getString("userId"))
+        org.junit.Assert.assertEquals("abc123", auth.getString("userHash"))
+        chat.close()
+    }
+
+    @Test
+    fun `unsigned identity carries no hash`() {
+        val chat = chat()
+        chat.identify(name = "Alex", email = "alex@example.com")
+        org.junit.Assert.assertFalse(chat.buildAuth().has("userHash"))
+        chat.close()
+    }
 }
