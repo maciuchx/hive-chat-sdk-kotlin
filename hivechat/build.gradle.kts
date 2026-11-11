@@ -69,7 +69,7 @@ publishing {
             groupId = "com.github.maciuchx.hive-chat-sdk-kotlin"
             artifactId = project.name
             version = project.version.toString()
-                .takeIf { it != Project.DEFAULT_VERSION } ?: "0.1.1"
+                .takeIf { it != Project.DEFAULT_VERSION } ?: "0.9.1"
         }
     }
 }

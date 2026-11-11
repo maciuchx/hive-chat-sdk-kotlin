@@ -181,10 +181,20 @@ fun HiveChatScreen(
                     val bytes = withContext(Dispatchers.IO) {
                         resolver.openInputStream(uri)?.use { it.readBytes() }
                     } ?: throw IllegalStateException("That file could not be read.")
+                    /* Photos are re-encoded as JPEG (HEIC is refused by the
+                       server and most are over the 5 MB limit); anything else
+                       still too large is stopped here with a clear message. */
+                    val prepared = withContext(Dispatchers.Default) {
+                        UploadPreparation.prepare(
+                            bytes = bytes,
+                            filename = uri.displayName(context) ?: "upload",
+                            contentType = resolver.getType(uri) ?: "application/octet-stream",
+                        )
+                    }
                     chat.send(
-                        fileBytes = bytes,
-                        filename = uri.displayName(context) ?: "upload",
-                        contentType = resolver.getType(uri) ?: "application/octet-stream",
+                        fileBytes = prepared.bytes,
+                        filename = prepared.filename,
+                        contentType = prepared.contentType,
                     )
                 } catch (e: Throwable) {
                     errorMessage = e.message ?: "That file could not be sent."
@@ -383,7 +393,8 @@ fun HiveChatScreen(
                 onPickPhoto = {
                     pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 },
-                onPickFile = { pickDocument.launch(arrayOf("*/*")) },
+                // Only what Hive accepts: images (re-encoded to JPEG) and PDFs.
+                onPickFile = { pickDocument.launch(arrayOf("image/*", "application/pdf")) },
                 voiceMessagesEnabled = voiceMessagesEnabled,
                 isRecording = isRecording,
                 recordingSeconds = recordingSeconds,

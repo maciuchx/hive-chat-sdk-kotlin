@@ -55,8 +55,8 @@ dependencyResolutionManagement {
 
 ```kotlin
 dependencies {
-    implementation("com.github.maciuchx.hive-chat-sdk-kotlin:hivechat:0.9.0")
-    implementation("com.github.maciuchx.hive-chat-sdk-kotlin:hivechat-ui:0.9.0") // optional
+    implementation("com.github.maciuchx.hive-chat-sdk-kotlin:hivechat:0.9.1")
+    implementation("com.github.maciuchx.hive-chat-sdk-kotlin:hivechat-ui:0.9.1") // optional
 }
 ```
 
@@ -283,6 +283,15 @@ MP4, which agents can play in the dashboard and which survives a hand-off to
 WhatsApp. The SDK asks for the permission when the customer taps the mic, not
 at launch.
 
+### Photos and files
+
+Voice messages and photo uploads need a Hive server at or above the current
+release, which accepts `audio/mp4` recordings; older servers reject them.
+`HiveChatScreen` re-encodes every photo (HEIC included) as a JPEG of at most
+2048 px and under the 5 MB limit before upload, and its file picker offers only
+images and PDFs. If you call `chat.send(fileBytes, …)` yourself, send JPEG,
+PNG, GIF, WebP or PDF under 5 MB — HEIC is refused by the server.
+
 ### Keeping the customer inside your app
 
 The bot and your agents can send **product cards** — the same ones the website
@@ -326,8 +335,7 @@ HiveChatScreen(
   backgrounded app is a disconnected app. Until that lands, the practical
   workaround is a Hive webhook into your own backend, which already has FCM
   credentials for your app.
-- **Identity is unverified** — see above.
-- **No voice or video.**
+- **No voice or video calls.**
 - **No message editing or deletion.**
 
 ## Protocol

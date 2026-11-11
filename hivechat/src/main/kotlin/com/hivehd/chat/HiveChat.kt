@@ -12,6 +12,7 @@ import com.hivehd.chat.models.FormResponse
 import com.hivehd.chat.models.KnowledgeBaseArticle
 import com.hivehd.chat.models.LinkPreview
 import com.hivehd.chat.models.MessageContent
+import com.hivehd.chat.models.MessageContent.Companion.optStringOrNull
 import com.hivehd.chat.models.Reaction
 import com.hivehd.chat.models.SatisfactionRequest
 import com.hivehd.chat.models.WidgetSettings
@@ -169,6 +170,14 @@ class HiveChat(
     private var handoffCode: String? = null
 
     /**
+     * The host app's package name, taken from the Context handed to
+     * [VisitorTokenStore.sharedPreferences] — the only Context the core SDK
+     * is given. Null with a custom or ephemeral store.
+     */
+    private val applicationId: String? =
+        (configuration.tokenStore as? PackageAwareTokenStore)?.packageName?.takeIf { it.isNotBlank() }
+
+    /**
      * Messages typed while the socket was down, flushed in order on reconnect.
      * A chat that silently eats what you typed on the Underground is worse
      * than one that admits it is offline.
@@ -176,6 +185,20 @@ class HiveChat(
     private val outbox = mutableListOf<Pair<String, String>>()
 
     private var typingResetJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * The last basket passed to [updateCart]. Kept so it can be re-sent when
+     * the conversation is created: a basket mirrored before the first message
+     * has no session to land on, and the agent picking the chat up should
+     * still see it.
+     */
+    private var lastCart: JSONObject? = null
+
+    /** True when [lastCart] has not yet gone out on a connected socket. */
+    private var cartPending = false
+
+    /** The session [lastCart] was last re-sent for, so it goes once per session. */
+    private var cartResentForSession: String? = null
 
     init {
         visitorToken = configuration.tokenStore.load() ?: run {
@@ -318,8 +341,9 @@ class HiveChat(
         /* pageUrl/pageTitle are web concepts the agent panel shows as "what
            they were looking at". Sending the package name is the honest
            native equivalent — it tells the agent which app this is without
-           pretending to be a URL they can open. */
-        put("pageUrl", "app://android")
+           pretending to be a URL they can open. Matches iOS's
+           `app://<bundle id>`. */
+        put("pageUrl", "app://${applicationId ?: "android"}")
         put("pageTitle", "Android app")
     }
 
@@ -362,9 +386,8 @@ class HiveChat(
                 put("contentType", uploaded.contentType)
                 put("name", uploaded.name)
             }
-            /* Replace the optimistic echo rather than adding a second row —
-               the server's own copy arrives with a real id and we drop ours
-               when it does. */
+            /* Replace the uploading placeholder with the message proper; its
+               local id is swapped for the server's when the send is acked. */
             removeLocalEcho(localId)
             enqueue(
                 MessageContent.VISITOR_FILE + payload,
@@ -495,22 +518,17 @@ class HiveChat(
      * @param currency ISO code, e.g. "GBP"
      */
     fun updateCart(items: List<CartItem>, total: String, currency: String) {
-        connection?.emit("cart:update", JSONObject().apply {
-            put("items", JSONArray().apply {
-                items.forEach { item ->
-                    put(JSONObject().apply {
-                        put("title", item.title)
-                        put("quantity", item.quantity)
-                        put("price", item.price)
-                        item.variant?.let { put("variant", it) }
-                        item.imageUrl?.let { put("image", it) }
-                    })
-                }
-            })
-            put("total", total)
-            put("currency", currency)
-            put("count", items.sumOf { it.quantity })
-        })
+        lastCart = cartPayload(items, total, currency)
+        cartPending = true
+        sendCartIfConnected()
+    }
+
+    private fun sendCartIfConnected() {
+        val cart = lastCart ?: return
+        val socket = connection ?: return
+        if (_connectionState.value != ConnectionState.Connected) return
+        socket.emit("cart:update", cart)
+        cartPending = false
     }
 
     /**
@@ -552,7 +570,13 @@ class HiveChat(
         _offlinePrompt.value = null
     }
 
-    /** Mints a one-time link that moves this conversation to another device. */
+    /**
+     * Mints a one-time link that moves this conversation to another device.
+     *
+     * No `pageUrl` is sent: an app has no web page to hang the code off (its
+     * handshake `pageUrl` is `app://…`), so the server links to its own hosted
+     * chat page instead.
+     */
     suspend fun createDeviceHandoff(): DeviceHandoff {
         val socket = connection ?: throw HiveChatException.NoActiveSession
         if (_sessionId.value == null) throw HiveChatException.NoActiveSession
@@ -560,19 +584,19 @@ class HiveChat(
         return suspendCancellableCoroutine { continuation ->
             socket.emitWithAck("chat:handoff:create") { response ->
                 val payload = response.optJSONObject(0)
-                val url = payload?.optString("url").orEmpty()
+                val url = payload?.optStringOrNull("url").orEmpty()
                 if (payload?.optBoolean("ok") == true && url.isNotEmpty()) {
                     continuation.resume(
                         DeviceHandoff(
                             url = url,
-                            code = payload.optString("code"),
-                            qrCodeSvg = payload.optString("qrSvg").ifEmpty { null },
+                            code = payload.optStringOrNull("code").orEmpty(),
+                            qrCodeSvg = payload.optStringOrNull("qrSvg"),
                             expiresInMinutes = payload.optInt("expiresInMinutes", 5),
                         )
                     )
                 } else {
                     continuation.resumeWithException(
-                        HiveChatException.Server(0, payload?.optString("error")?.ifEmpty { null })
+                        HiveChatException.Server(0, payload?.optStringOrNull("error"))
                     )
                 }
             }
@@ -601,8 +625,7 @@ class HiveChat(
             outbox += localId to body
             return
         }
-        socket.emit("chat:message", JSONObject().put("body", body))
-        markLocalEcho(localId, ChatMessage.Delivery.SENT)
+        emitMessage(socket, localId, body)
     }
 
     private fun flushOutbox() {
@@ -610,9 +633,41 @@ class HiveChat(
         if (outbox.isEmpty()) return
         val queued = outbox.toList()
         outbox.clear()
-        queued.forEach { (localId, body) ->
-            socket.emit("chat:message", JSONObject().put("body", body))
-            markLocalEcho(localId, ChatMessage.Delivery.SENT)
+        queued.forEach { (localId, body) -> emitMessage(socket, localId, body) }
+    }
+
+    /**
+     * The server does not echo the customer's own message back; it acks the
+     * emit with `{ ok, id, created_at }`. The echo stays SENDING until then,
+     * and a refusal or no answer marks it FAILED.
+     */
+    private fun emitMessage(socket: SocketIOConnection, localId: String, body: String) {
+        socket.emitWithAck("chat:message", JSONObject().put("body", body), MESSAGE_ACK_TIMEOUT_SECONDS) { response ->
+            // Arrives on a socket thread; state is only touched on the scope's dispatcher.
+            scope.launch { handleMessageAck(localId, response.optJSONObject(0)) }
+        }
+    }
+
+    private fun handleMessageAck(localId: String, ack: JSONObject?) {
+        val serverId = ack?.optStringOrNull("id")
+        if (ack?.optBoolean("ok") != true || serverId == null) {
+            log("chat:message not acknowledged: ${ack?.optStringOrNull("error") ?: "timeout"}")
+            markLocalEcho(localId, ChatMessage.Delivery.FAILED)
+            return
+        }
+        val createdAt = ack.optStringOrNull("created_at")
+        _messages.update { list ->
+            /* If an echo with the real id already landed, the local copy is
+               the duplicate. */
+            if (list.any { it.id == serverId }) return@update list.filterNot { it.id == localId }
+            list.map {
+                if (it.id != localId) it
+                else it.copy(
+                    id = serverId,
+                    delivery = ChatMessage.Delivery.SENT,
+                    createdAt = createdAt?.let(ChatMessage::parseDate) ?: it.createdAt,
+                )
+            }
         }
     }
 
@@ -651,6 +706,7 @@ class HiveChat(
            but a name captured after the socket opened would otherwise not
            reach the agent panel until the next reconnect. */
         if (visitorName != null || visitorEmail != null || visitorUserHash != null) identify()
+        if (cartPending) sendCartIfConnected()
         flushOutbox()
     }
 
@@ -659,7 +715,7 @@ class HiveChat(
         log("← $event")
 
         when (event) {
-            "chat:session" -> _sessionId.value = payload.optString("sessionId").ifEmpty { null }
+            "chat:session" -> setSessionId(payload.optStringOrNull("sessionId"))
 
             "chat:restore" -> handleRestore(payload)
 
@@ -667,17 +723,17 @@ class HiveChat(
 
             "chat:typing" -> {
                 _isAgentTyping.value = payload.optBoolean("typing", false)
-                _typingAgentName.value = payload.optString("name").ifEmpty { null }
+                _typingAgentName.value = payload.optStringOrNull("name")
             }
 
             "chat:read" -> _messages.update { list ->
                 list.map { if (it.sender == ChatMessage.Sender.VISITOR) it.copy(isRead = true) else it }
             }
 
-            "chat:transfer" -> payload.optString("message").ifEmpty { null }
+            "chat:transfer" -> payload.optStringOrNull("message")
                 ?.let { appendSystemMessage(it) }
 
-            "chat:offline" -> _offlinePrompt.value = payload.optString("message").ifEmpty { null }
+            "chat:offline" -> _offlinePrompt.value = payload.optStringOrNull("message")
 
             "chat:queue-position" -> _queuePosition.value =
                 payload.optInt("position").takeIf { it > 0 }
@@ -689,15 +745,19 @@ class HiveChat(
 
             "agents:status" -> _isTeamOnline.value = payload.optBoolean("online", false)
 
-            "visitor:name" -> payload.optString("name").ifEmpty { null }?.let { visitorName = it }
+            "visitor:name" -> payload.optStringOrNull("name")?.let { visitorName = it }
 
             /* An agent reached out first. The invitation text arrives as a
                normal chat:message straight after, so nothing to append here —
-               but the host app may want to open the chat. */
-            "visitor:invite" -> onProactiveInvitation?.invoke(payload.optString("message"))
+               but the host app may want to open the chat. The server created
+               (or reused) a session for it, so adopt that id. */
+            "visitor:invite" -> {
+                payload.optStringOrNull("sessionId")?.let { setSessionId(it) }
+                onProactiveInvitation?.invoke(payload.optStringOrNull("message").orEmpty())
+            }
 
             "csat:request" -> _satisfactionRequest.value = SatisfactionRequest(
-                payload.optString("prompt").ifEmpty { "How would you rate this conversation?" }
+                payload.optStringOrNull("prompt") ?: "How would you rate this conversation?"
             )
 
             "csat:received" -> _satisfactionRequest.value = null
@@ -707,11 +767,11 @@ class HiveChat(
             "chat:message:enriched" -> handleEnrichment(payload)
 
             "chat:handoff:adopted" -> {
-                payload.optString("visitorToken").ifEmpty { null }?.let {
+                payload.optStringOrNull("visitorToken")?.let {
                     visitorToken = it
                     configuration.tokenStore.save(it)
                 }
-                payload.optString("sessionId").ifEmpty { null }?.let { _sessionId.value = it }
+                payload.optStringOrNull("sessionId")?.let { setSessionId(it) }
                 handoffCode = null
             }
 
@@ -725,8 +785,8 @@ class HiveChat(
     }
 
     private fun handleRestore(payload: JSONObject) {
-        _sessionId.value = payload.optString("sessionId").ifEmpty { null }
-        _hasEnded.value = payload.optString("status") == "ended"
+        setSessionId(payload.optStringOrNull("sessionId"))
+        _hasEnded.value = payload.optStringOrNull("status") == "ended"
 
         val restored = payload.optJSONArray("messages").orEmpty()
             .mapObjects { ChatMessage.from(it, configuration.host) }
@@ -754,9 +814,13 @@ class HiveChat(
     private fun handleIncomingMessage(payload: JSONObject) {
         val message = ChatMessage.from(payload, configuration.host) ?: return
 
-        /* The server echoes the customer's own messages back. Drop the
-           optimistic copy in favour of the server's, matching on content
-           because the ids differ by construction. */
+        if (_messages.value.any { it.id == message.id }) return
+
+        /* The server acks the customer's own messages rather than echoing
+           them, but should an echo arrive (another socket of the same visitor,
+           or an older server) before the ack, replace the optimistic copy
+           instead of adding a second row. Matched on content because the ids
+           differ until the ack lands. */
         if (message.sender == ChatMessage.Sender.VISITOR) {
             val index = _messages.value.indexOfLast {
                 it.sender == ChatMessage.Sender.VISITOR &&
@@ -768,7 +832,6 @@ class HiveChat(
                 return
             }
         }
-        if (_messages.value.any { it.id == message.id }) return
 
         _messages.update { it + message }
         _isAgentTyping.value = false
@@ -782,7 +845,7 @@ class HiveChat(
     }
 
     private fun handleReactions(payload: JSONObject) {
-        val messageId = payload.optString("message_id").ifEmpty { return }
+        val messageId = payload.optStringOrNull("message_id") ?: return
         val reactions = Reaction.list(payload.optJSONArray("reactions"))
         _messages.update { list ->
             list.map { if (it.id == messageId) it.copy(reactions = reactions) else it }
@@ -790,11 +853,22 @@ class HiveChat(
     }
 
     private fun handleEnrichment(payload: JSONObject) {
-        val messageId = payload.optString("messageId").ifEmpty { return }
+        val messageId = payload.optStringOrNull("messageId") ?: return
         val previews = payload.optJSONObject("metadata")?.optJSONArray("url_previews")
             .orEmpty().mapObjects { LinkPreview.from(it) }.filterNotNull()
         if (previews.isEmpty()) return
         _linkPreviews.update { it + (messageId to previews) }
+    }
+
+    /**
+     * Records the session id, and the first time a given session becomes
+     * known re-sends the last basket so it lands on the new conversation.
+     */
+    private fun setSessionId(id: String?) {
+        _sessionId.value = id
+        if (id == null || id == cartResentForSession || lastCart == null) return
+        cartResentForSession = id
+        sendCartIfConnected()
     }
 
     private fun appendSystemMessage(text: String) {
@@ -815,6 +889,33 @@ class HiveChat(
 
     companion object {
         private const val NAMESPACE = "/livechat/visitor"
+
+        /* The server acks after storing the message, which can include
+           creating the session; give it longer than a bare round trip. */
+        private const val MESSAGE_ACK_TIMEOUT_SECONDS = 15L
+
+        /**
+         * `cart:update` payload. Each item carries both `qty` (what the agent
+         * dashboard reads) and `quantity` (what older servers read).
+         */
+        internal fun cartPayload(items: List<CartItem>, total: String, currency: String): JSONObject =
+            JSONObject().apply {
+                put("items", JSONArray().apply {
+                    items.forEach { item ->
+                        put(JSONObject().apply {
+                            put("title", item.title)
+                            put("qty", item.quantity)
+                            put("quantity", item.quantity)
+                            put("price", item.price)
+                            item.variant?.let { put("variant", it) }
+                            item.imageUrl?.let { put("image", it) }
+                        })
+                    }
+                })
+                put("total", total)
+                put("currency", currency)
+                put("count", items.sumOf { it.quantity })
+            }
 
         /**
          * Pass your own client to share a connection pool and interceptors.

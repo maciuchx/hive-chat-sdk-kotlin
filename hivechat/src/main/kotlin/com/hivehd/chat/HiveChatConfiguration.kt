@@ -56,7 +56,9 @@ interface VisitorTokenStore {
             key: String = "visitorToken",
         ): VisitorTokenStore {
             val prefs = context.applicationContext.getSharedPreferences(name, Context.MODE_PRIVATE)
-            return object : VisitorTokenStore {
+            val appPackage: String? = context.packageName
+            return object : VisitorTokenStore, PackageAwareTokenStore {
+                override val packageName: String? = appPackage
                 override fun load(): String? = prefs.getString(key, null)
                 override fun save(token: String) = prefs.edit().putString(key, token).apply()
             }
@@ -73,4 +75,13 @@ interface VisitorTokenStore {
             override fun save(token: String) { stored = token }
         }
     }
+}
+
+/**
+ * A token store that also knows the host app's package name — the shared-
+ * preferences one, built from a Context. Lets the handshake send
+ * `app://<applicationId>` without the configuration growing a Context field.
+ */
+internal interface PackageAwareTokenStore {
+    val packageName: String?
 }

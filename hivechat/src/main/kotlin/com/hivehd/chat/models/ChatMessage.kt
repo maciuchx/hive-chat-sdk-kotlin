@@ -1,5 +1,6 @@
 package com.hivehd.chat.models
 
+import com.hivehd.chat.models.MessageContent.Companion.optStringOrNull
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -49,15 +50,16 @@ data class ChatMessage(
 
     companion object {
         fun from(wire: JSONObject, host: String): ChatMessage? {
-            val body = wire.optString("body")
+            val body = wire.optStringOrNull("body") ?: ""
             val content = MessageContent.parse(body) ?: return null
 
             return ChatMessage(
-                id = wire.optString("id").ifEmpty { "srv_${System.nanoTime()}" },
-                sender = Sender.from(wire.optString("sender_type")),
-                senderName = wire.optString("sender_name").ifEmpty { null },
+                id = wire.optStringOrNull("id") ?: "srv_${System.nanoTime()}",
+                sender = Sender.from(wire.optStringOrNull("sender_type") ?: ""),
+                // optStringOrNull: Android's org.json turns a JSON null into the text "null".
+                senderName = wire.optStringOrNull("sender_name"),
                 content = content.resolveRelativeUrls(host),
-                createdAt = parseDate(wire.optString("created_at")),
+                createdAt = parseDate(wire.optStringOrNull("created_at") ?: ""),
                 isRead = wire.optBoolean("read", false),
                 reactions = Reaction.list(wire.optJSONArray("reactions")),
             )

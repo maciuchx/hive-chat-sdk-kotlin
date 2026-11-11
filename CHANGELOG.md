@@ -5,6 +5,31 @@ semantic versioning from 1.0 onwards.
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-11-11
+
+### Fixed
+- The session id no longer becomes the text "null" when the server sends
+  `sessionId: null` (it does on every connect), which sent transcript emails
+  to `/widget-transcript/null/email`. Every nullable field read from the
+  server is now treated the same way.
+- Sent messages get their real id. The server acknowledges each message with
+  its id instead of echoing it back; the SDK now waits for that answer, swaps
+  the temporary id for the real one, and marks the message failed if the
+  server refuses it or does not answer in 15 seconds.
+- Basket items now carry `qty` (what the agent dashboard reads) as well as
+  `quantity`, and the last basket is sent again when the conversation starts,
+  so an agent sees a basket mirrored before the first message.
+- A proactive invitation from an agent now adopts the conversation it opened.
+- Photos are re-encoded as JPEG (at most 2048 px, under 5 MB, upright) before
+  upload, so HEIC photos and large camera shots are no longer refused. The
+  file picker offers only images and PDFs, and a file still over 5 MB shows
+  a clear error instead of uploading.
+- The handshake identifies the app as `app://<package name>` (taken from the
+  Context given to `VisitorTokenStore.sharedPreferences`; iOS sends
+  `app://<bundle id>`) instead of a fixed `app://android`; device hand-off
+  links for apps are built by the server.
+- The local publishing fallback version was stuck at 0.1.1.
+
 ## [0.9.0] — 2026-10-15
 
 ### Added

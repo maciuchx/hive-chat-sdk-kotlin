@@ -53,9 +53,8 @@ internal class SocketIOConnection(
     private var pendingReconnect: ScheduledFuture<*>? = null
 
     /* Socket.IO acks are a request/response pair keyed by an integer the
-       client picks. `chat:handoff:create` is the only visitor event using one
-       today, but a shipped SDK cannot add the plumbing later without a
-       release, so it goes in now. */
+       client picks. Used by `chat:handoff:create` and `chat:message` (the
+       server acks the visitor's message with its real id). */
     private val ackCounter = AtomicInteger(0)
     private val pendingAcks = ConcurrentHashMap<Int, (JSONArray) -> Unit>()
 
@@ -189,15 +188,29 @@ internal class SocketIOConnection(
         socket?.send("42$namespace,$frame")
     }
 
-    fun emitWithAck(event: String, payload: JSONObject = JSONObject(), ack: (JSONArray) -> Unit) {
+    /**
+     * Emits with a Socket.IO acknowledgement. [ack] runs on a socket thread —
+     * callers that touch state must hop to their own dispatcher. It receives
+     * an empty array on timeout, on a dropped socket, or when there was no
+     * socket to write to.
+     */
+    fun emitWithAck(
+        event: String,
+        payload: JSONObject = JSONObject(),
+        timeoutSeconds: Long = 5,
+        ack: (JSONArray) -> Unit,
+    ) {
         val id = ackCounter.incrementAndGet()
         pendingAcks[id] = ack
         val frame = JSONArray().put(event).put(payload)
-        socket?.send("42$namespace,$id$frame")
+        val written = socket?.send("42$namespace,$id$frame") ?: false
+        if (!written) {
+            pendingAcks.remove(id)?.let { handler -> scheduler.execute { handler(JSONArray()) } }
+            return
+        }
 
-        /* An ack the server never sends would pin the callback forever. Five
-           seconds is generous for a round trip that only mints a code. */
-        scheduler.schedule({ pendingAcks.remove(id)?.invoke(JSONArray()) }, 5, TimeUnit.SECONDS)
+        /* An ack the server never sends would pin the callback forever. */
+        scheduler.schedule({ pendingAcks.remove(id)?.invoke(JSONArray()) }, timeoutSeconds, TimeUnit.SECONDS)
     }
 
     private fun handleClose() {
